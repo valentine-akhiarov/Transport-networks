@@ -355,7 +355,7 @@ def screen_for_disease(cities_list, quarantine_zone_size, transmitters_test_quot
         if city_quota >= infected_mask.sum() + healthy_mask.sum():
             candidate_indices = np.where(infected_mask)[0]
         else:
-            candidate_indices = np.where(infected_mask)[0]
+            candidate_indices = np.append(np.where(infected_mask)[0], np.where(healthy_mask)[0])
             candidate_indices = np.random.choice(candidate_indices, int(
                 np.ceil(infected_mask.sum() * (city_quota / (infected_mask.sum() + healthy_mask.sum())))),
                                                  replace=False)
