@@ -14,6 +14,7 @@ from models import *
 DEBUG = True                    # Output each main function runtime
 SAVE_DATA = True                # Flag to save data below (dataframe + plots)
 PATH = r'C:\Users\Владислав\Downloads\Transport-networks-main'  # Base path (existing) where subfolder with results will be created
+# PATH = r'C:\Users\va\Documents\Transport-networks'
 
 if __name__=='__main__':
 
@@ -28,7 +29,7 @@ if __name__=='__main__':
     neighbourhood_radius = 2        # Maximum distance allowed to travel for each person from his initial location
 
     # 1 epoch = 8 hours
-    epochs = 40                     # Steps to perform during each people 1) travel and 2) spread the disease
+    epochs = 20                     # Steps to perform during each people 1) travel and 2) spread the disease
 
     radius = 1                      # Maximum radius for person to travel in single epoch
     spread_radius = 1               # Disease spreading radius
@@ -37,7 +38,7 @@ if __name__=='__main__':
 
     # (x, z, S, j, u)
     transmitters_test_quota = 0     # Number of tests for visible transmitters to have possibility to move to quarantine zone with less death rate
-    others_test_quota = 5           # Number of tests for others to have possibility to move to quarantine zone with less death rate
+    others_test_quota = 10000       # Number of tests for others to have possibility to move to quarantine zone with less death rate
     quarantine_zone_size = 100      # Quarantine zone's capacity
     remote_workers = 0.2            # Fraction of remote workers
     responsible_people = 0.2        # Fraction of responsible people (which have lower probability of getting ill)

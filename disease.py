@@ -295,19 +295,32 @@ def screen_for_disease(cities_list, quarantine_zone_size, transmitters_test_quot
 
     # Calc candidates for screening in all cities
     total_candidates = 0
+    transmitter_candidates = 0
+    other_candidates = 0
     quarantime_occupancy = 0
 
     for city in cities_list:
         candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr != DEAD) & (city.status_arr != CURED)
         total_candidates += candidate_mask.sum()
-        quarantime_occupancy += (city.location_arr == QUARANTINE).sum()
+
+        candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr == TRANSMITTER)
+        transmitter_candidates += candidate_mask.sum()
+
+        candidate_mask = (city.location_arr != QUARANTINE) & ((city.status_arr == HEALTHY) | (city.status_arr == INFECTED))
+        other_candidates += candidate_mask.sum()
+
+    quarantime_occupancy += (city.location_arr == QUARANTINE).sum()
 
     # Screen transmitters
     for city in cities_list:
 
-        candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr != DEAD) & (city.status_arr != CURED)
+        if transmitter_candidates == 0:
+            continue
+
+        # candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr != DEAD) & (city.status_arr != CURED)
+        candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr == TRANSMITTER)
         city_candidates = candidate_mask.sum()
-        city_ratio = city_candidates / total_candidates
+        city_ratio = city_candidates / transmitter_candidates  # total_candidates
         city_quota = int(np.floor(city_ratio * transmitters_test_quota))  # Approximation - rounding down
 
         # Screen randomly selected transmitters
@@ -337,9 +350,13 @@ def screen_for_disease(cities_list, quarantine_zone_size, transmitters_test_quot
     # Screen others
     for city in cities_list:
 
-        candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr != DEAD) & (city.status_arr != CURED)
+        if other_candidates == 0:
+            continue
+
+        # candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr != DEAD) & (city.status_arr != CURED)
+        candidate_mask = (city.location_arr != QUARANTINE) & ((city.status_arr == HEALTHY) | (city.status_arr == INFECTED))
         city_candidates = candidate_mask.sum()
-        city_ratio = city_candidates / total_candidates
+        city_ratio = city_candidates / other_candidates  # total_candidates
         city_quota = int(np.floor(city_ratio * others_test_quota))  # Approximation - rounding down
 
         # Screen randomly selected others
@@ -352,13 +369,28 @@ def screen_for_disease(cities_list, quarantine_zone_size, transmitters_test_quot
         # candidate_indices = np.where(candidate_mask)[0]
 
         # Simulate random selection of infected group from infected + healthy population
-        if city_quota >= infected_mask.sum() + healthy_mask.sum():
+        # if city_quota >= infected_mask.sum() + healthy_mask.sum():
+
+        if (infected_mask.sum() + healthy_mask.sum()) == 0:
+            continue
+
+        # Enough quota to quarantine all infected
+        if city_quota / (infected_mask.sum() + healthy_mask.sum()) >= 1:
             candidate_indices = np.where(infected_mask)[0]
+
+        # Select those who are infected and quarantine 'em
         else:
             candidate_indices = np.append(np.where(infected_mask)[0], np.where(healthy_mask)[0])
-            candidate_indices = np.random.choice(candidate_indices, int(
-                np.ceil(infected_mask.sum() * (city_quota / (infected_mask.sum() + healthy_mask.sum())))),
-                                                 replace=False)
+
+            # Array to show if infected person is going through screening
+            selected_infected_mask = np.random.choice([True, False], infected_mask.sum(),
+                                                      p=[city_quota / candidate_indices.size, 1 - city_quota / candidate_indices.size])
+            candidate_indices = np.where(infected_mask)[0][selected_infected_mask]
+
+            # candidate_indices = np.random.choice(candidate_indices, int(
+            #     np.ceil(infected_mask.sum() * (city_quota / (infected_mask.sum() + healthy_mask.sum())))),
+            #                                      replace=False)
+
         if candidate_indices.size == 0:
             continue
 
