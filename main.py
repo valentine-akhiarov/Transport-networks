@@ -18,7 +18,7 @@ PATH = r'C:\Users\Владислав\Downloads\Transport-networks-main'  # Base 
 if __name__=='__main__':
 
     # 1 person = 100 people
-    init_transmitters_num = 1       # Initial infected people number
+    init_transmitters_num = 20      # Initial infected people number
 
     timer_min = 0                   # Min steps (epochs) until infected person can transmit a disease (exception: initial group)
     timer_max = 21                  # Max steps (epochs) until infected person can transmit a disease (exception: initial group)
@@ -28,7 +28,7 @@ if __name__=='__main__':
     neighbourhood_radius = 2        # Maximum distance allowed to travel for each person from his initial location
 
     # 1 epoch = 8 hours
-    epochs = 100                    # Steps to perform during each people 1) travel and 2) spread the disease
+    epochs = 40                     # Steps to perform during each people 1) travel and 2) spread the disease
 
     radius = 1                      # Maximum radius for person to travel in single epoch
     spread_radius = 1               # Disease spreading radius
@@ -37,7 +37,7 @@ if __name__=='__main__':
 
     # (x, z, S, j, u)
     transmitters_test_quota = 0     # Number of tests for visible transmitters to have possibility to move to quarantine zone with less death rate
-    others_test_quota = 1           # Number of tests for others to have possibility to move to quarantine zone with less death rate
+    others_test_quota = 5           # Number of tests for others to have possibility to move to quarantine zone with less death rate
     quarantine_zone_size = 100      # Quarantine zone's capacity
     remote_workers = 0.2            # Fraction of remote workers
     responsible_people = 0.2        # Fraction of responsible people (which have lower probability of getting ill)
@@ -47,7 +47,10 @@ if __name__=='__main__':
                                                                                                str(spread_radius).replace('.', '_'),
                                                                                                str(infect_prob).replace('.', '_')))
     # Create this subfolder
-    os.mkdir(plot_disease_matrix)
+    try:
+        os.mkdir(plot_disease_matrix)
+    except FileExistsError:
+        pass
 
     # Perform simulation (without city plots in each epoch)
     timer_dict, healthy_tracker, infected_tracker, invisible_transmitters_tracker, \
