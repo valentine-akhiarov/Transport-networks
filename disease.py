@@ -284,6 +284,134 @@ def plot_disease_exposures(cities_list, spread_radius, epoch=None, path=None):
     plt.close(fig)
 
 
+def _screen_transmitters(cities_list, city_idx, quarantine_zone_size, quarantime_occupancy, transmitter_candidates, transmitters_test_quota):
+    """ Screen transmitters from single city for disease to move some into quarantine zone with less death rate
+
+    :param cities_list:             List of CityResidents class objects
+    :param city_idx:                City index
+    :param quarantine_zone_size:    Quarantine zone's size
+    :param quarantime_occupancy:    Quarantine zone's current occupancy
+    :param transmitter_candidates:  Total test candidates
+    :param transmitters_test_quota: Number of tests for visible transmitters
+    :return: Current quarantine zone's current occupancy
+    """
+
+    city = cities_list[city_idx]
+
+    if transmitter_candidates == 0:
+        return quarantime_occupancy
+
+    # candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr != DEAD) & (city.status_arr != CURED)
+    candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr == TRANSMITTER)
+    city_candidates = candidate_mask.sum()
+    city_ratio = city_candidates / transmitter_candidates  # total_candidates
+    city_quota = int(np.floor(city_ratio * transmitters_test_quota))  # Approximation - rounding down
+
+    # Screen randomly selected transmitters
+    candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr == TRANSMITTER)
+    candidate_indices = np.where(candidate_mask)[0]
+    if candidate_indices.size == 0:
+        return quarantime_occupancy
+
+    # Quarantine zone is not full yet
+    if quarantime_occupancy < quarantine_zone_size:
+
+        # Fill last spaces
+        if quarantine_zone_size - quarantime_occupancy < city_quota:
+            candidate_indices = np.random.choice(candidate_indices, min(quarantine_zone_size - quarantime_occupancy,
+                                                                        candidate_indices.size), replace=False)
+            city.location_arr[candidate_indices] = QUARANTINE
+            quarantime_occupancy += candidate_indices.size
+            return quarantime_occupancy
+
+        # Transfer all transmitters to quarantine zone
+        else:
+            candidate_indices = np.random.choice(candidate_indices, min(city_quota, candidate_indices.size),
+                                                 replace=False)
+            city.location_arr[candidate_indices] = QUARANTINE
+            quarantime_occupancy += city_quota
+            return quarantime_occupancy
+
+
+def _screen_others(cities_list, city_idx, quarantine_zone_size, quarantime_occupancy, other_candidates, others_test_quota):
+    """ Screen others (healthy + infected) from single city for disease to move some into quarantine zone with less death rate
+
+    :param cities_list:             List of CityResidents class objects
+    :param city_idx:                City index
+    :param quarantine_zone_size:    Quarantine zone's size
+    :param quarantime_occupancy:    Quarantine zone's current occupancy
+    :param other_candidates:        Total test candidates
+    :param others_test_quota:       Number of tests for healthy/infected
+    :return: Current quarantine zone's current occupancy
+    """
+
+    city = cities_list[city_idx]
+
+    if other_candidates == 0:
+        return quarantime_occupancy
+
+    # candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr != DEAD) & (city.status_arr != CURED)
+    candidate_mask = (city.location_arr != QUARANTINE) & ((city.status_arr == HEALTHY) | (city.status_arr == INFECTED))
+    city_candidates = candidate_mask.sum()
+    city_ratio = city_candidates / other_candidates  # total_candidates
+    city_quota = int(np.floor(city_ratio * others_test_quota))  # Approximation - rounding down
+
+    # Screen randomly selected others
+    infected_mask = (city.location_arr != QUARANTINE) & (city.status_arr == INFECTED)
+    healthy_mask = (city.location_arr != QUARANTINE) & (city.status_arr == HEALTHY)
+    if infected_mask.sum() == 0:
+        return quarantime_occupancy
+
+    # candidate_mask = (city.location_arr != QUARANTINE) & ((city.status_arr == INFECTED) | (city.status_arr == HEALTHY))
+    # candidate_indices = np.where(candidate_mask)[0]
+
+    # Simulate random selection of infected group from infected + healthy population
+    # if city_quota >= infected_mask.sum() + healthy_mask.sum():
+
+    if (infected_mask.sum() + healthy_mask.sum()) == 0:
+        return quarantime_occupancy
+
+    # Enough quota to quarantine all infected
+    if city_quota / (infected_mask.sum() + healthy_mask.sum()) >= 1:
+        candidate_indices = np.where(infected_mask)[0]
+
+    # Select those who are infected and quarantine 'em
+    else:
+        candidate_indices = np.append(np.where(infected_mask)[0], np.where(healthy_mask)[0])
+
+        # Array to show if infected person is going through screening
+        selected_infected_mask = np.random.choice([True, False], infected_mask.sum(),
+                                                  p=[city_quota / candidate_indices.size,
+                                                     1 - city_quota / candidate_indices.size])
+        candidate_indices = np.where(infected_mask)[0][selected_infected_mask]
+
+        # candidate_indices = np.random.choice(candidate_indices, int(
+        #     np.ceil(infected_mask.sum() * (city_quota / (infected_mask.sum() + healthy_mask.sum())))),
+        #                                      replace=False)
+
+    if candidate_indices.size == 0:
+        return quarantime_occupancy
+
+    # Quarantine zone is not full yet
+    if quarantime_occupancy < quarantine_zone_size:
+
+        # Fill last spaces
+        if quarantine_zone_size - quarantime_occupancy < city_quota:
+            candidate_indices = np.random.choice(candidate_indices, min(quarantine_zone_size - quarantime_occupancy,
+                                                                        candidate_indices.size), replace=False)
+            city.location_arr[candidate_indices] = QUARANTINE
+            quarantime_occupancy += candidate_indices.size
+            return quarantime_occupancy
+
+        # Transfer all transmitters to quarantine zone
+        else:
+            candidate_indices = np.random.choice(candidate_indices, min(city_quota, candidate_indices.size),
+                                                 replace=False)
+            city.location_arr[candidate_indices] = QUARANTINE
+            quarantime_occupancy += city_quota
+            return quarantime_occupancy
+
+
 def screen_for_disease(cities_list, quarantine_zone_size, transmitters_test_quota, others_test_quota):
     """ Screen population for disease to move some into quarantine zone with less death rate
 
@@ -311,103 +439,22 @@ def screen_for_disease(cities_list, quarantine_zone_size, transmitters_test_quot
 
     quarantime_occupancy += (city.location_arr == QUARANTINE).sum()
 
-    # Screen transmitters
-    for city in cities_list:
+    # Screen cities in random order by transmitters/others groups
+    priority_queue = list((i, 'transmitters') for i in range(len(cities_list))) + list((i, 'others') for i in range(len(cities_list)))
+    np.random.shuffle(priority_queue)
 
-        if transmitter_candidates == 0:
-            continue
+    for city_idx, group in priority_queue:
 
-        # candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr != DEAD) & (city.status_arr != CURED)
-        candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr == TRANSMITTER)
-        city_candidates = candidate_mask.sum()
-        city_ratio = city_candidates / transmitter_candidates  # total_candidates
-        city_quota = int(np.floor(city_ratio * transmitters_test_quota))  # Approximation - rounding down
+        # Screen other group
+        if group == 'others':
 
-        # Screen randomly selected transmitters
-        candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr == TRANSMITTER)
-        candidate_indices = np.where(candidate_mask)[0]
-        if candidate_indices.size == 0:
-            continue
+            quarantime_occupancy = _screen_others(cities_list, city_idx, quarantine_zone_size, quarantime_occupancy,
+                                                  other_candidates, others_test_quota)
 
-        # Quarantine zone is not full yet
-        if quarantime_occupancy < quarantine_zone_size:
+        # Screen transmitter group
+        elif group == 'transmitters':
 
-            # Fill last spaces
-            if quarantine_zone_size - quarantime_occupancy < city_quota:
-                candidate_indices = np.random.choice(candidate_indices, min(quarantine_zone_size - quarantime_occupancy,
-                                                                            candidate_indices.size), replace=False)
-                city.location_arr[candidate_indices] = QUARANTINE
-                quarantime_occupancy = quarantine_zone_size
-                break  # No space left
+            quarantime_occupancy = _screen_transmitters(cities_list, city_idx,
+                                                        quarantine_zone_size, quarantime_occupancy,
+                                                        transmitter_candidates, transmitters_test_quota)
 
-            # Transfer all transmitters to quarantine zone
-            else:
-                candidate_indices = np.random.choice(candidate_indices, min(city_quota, candidate_indices.size),
-                                                     replace=False)
-                city.location_arr[candidate_indices] = QUARANTINE
-                quarantime_occupancy += city_quota
-
-    # Screen others
-    for city in cities_list:
-
-        if other_candidates == 0:
-            continue
-
-        # candidate_mask = (city.location_arr != QUARANTINE) & (city.status_arr != DEAD) & (city.status_arr != CURED)
-        candidate_mask = (city.location_arr != QUARANTINE) & ((city.status_arr == HEALTHY) | (city.status_arr == INFECTED))
-        city_candidates = candidate_mask.sum()
-        city_ratio = city_candidates / other_candidates  # total_candidates
-        city_quota = int(np.floor(city_ratio * others_test_quota))  # Approximation - rounding down
-
-        # Screen randomly selected others
-        infected_mask = (city.location_arr != QUARANTINE) & (city.status_arr == INFECTED)
-        healthy_mask = (city.location_arr != QUARANTINE) & (city.status_arr == HEALTHY)
-        if infected_mask.sum() == 0:
-            continue
-
-        # candidate_mask = (city.location_arr != QUARANTINE) & ((city.status_arr == INFECTED) | (city.status_arr == HEALTHY))
-        # candidate_indices = np.where(candidate_mask)[0]
-
-        # Simulate random selection of infected group from infected + healthy population
-        # if city_quota >= infected_mask.sum() + healthy_mask.sum():
-
-        if (infected_mask.sum() + healthy_mask.sum()) == 0:
-            continue
-
-        # Enough quota to quarantine all infected
-        if city_quota / (infected_mask.sum() + healthy_mask.sum()) >= 1:
-            candidate_indices = np.where(infected_mask)[0]
-
-        # Select those who are infected and quarantine 'em
-        else:
-            candidate_indices = np.append(np.where(infected_mask)[0], np.where(healthy_mask)[0])
-
-            # Array to show if infected person is going through screening
-            selected_infected_mask = np.random.choice([True, False], infected_mask.sum(),
-                                                      p=[city_quota / candidate_indices.size, 1 - city_quota / candidate_indices.size])
-            candidate_indices = np.where(infected_mask)[0][selected_infected_mask]
-
-            # candidate_indices = np.random.choice(candidate_indices, int(
-            #     np.ceil(infected_mask.sum() * (city_quota / (infected_mask.sum() + healthy_mask.sum())))),
-            #                                      replace=False)
-
-        if candidate_indices.size == 0:
-            continue
-
-        # Quarantine zone is not full yet
-        if quarantime_occupancy < quarantine_zone_size:
-
-            # Fill last spaces
-            if quarantine_zone_size - quarantime_occupancy < city_quota:
-                candidate_indices = np.random.choice(candidate_indices, min(quarantine_zone_size - quarantime_occupancy,
-                                                                            candidate_indices.size), replace=False)
-                city.location_arr[candidate_indices] = QUARANTINE
-                quarantime_occupancy = quarantine_zone_size
-                break  # No space left
-
-            # Transfer all transmitters to quarantine zone
-            else:
-                candidate_indices = np.random.choice(candidate_indices, min(city_quota, candidate_indices.size),
-                                                     replace=False)
-                city.location_arr[candidate_indices] = QUARANTINE
-                quarantime_occupancy += city_quota
