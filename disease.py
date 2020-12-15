@@ -332,6 +332,8 @@ def _screen_transmitters(cities_list, city_idx, quarantine_zone_size, quarantime
             quarantime_occupancy += city_quota
             return quarantime_occupancy
 
+    return quarantime_occupancy
+
 
 def _screen_others(cities_list, city_idx, quarantine_zone_size, quarantime_occupancy, other_candidates, others_test_quota):
     """ Screen others (healthy + infected) from single city for disease to move some into quarantine zone with less death rate
@@ -411,6 +413,8 @@ def _screen_others(cities_list, city_idx, quarantine_zone_size, quarantime_occup
             quarantime_occupancy += city_quota
             return quarantime_occupancy
 
+    return quarantime_occupancy
+
 
 def screen_for_disease(cities_list, quarantine_zone_size, transmitters_test_quota, others_test_quota):
     """ Screen population for disease to move some into quarantine zone with less death rate
@@ -437,7 +441,8 @@ def screen_for_disease(cities_list, quarantine_zone_size, transmitters_test_quot
         candidate_mask = (city.location_arr != QUARANTINE) & ((city.status_arr == HEALTHY) | (city.status_arr == INFECTED))
         other_candidates += candidate_mask.sum()
 
-    quarantime_occupancy += (city.location_arr == QUARANTINE).sum()
+        quarantime_occupancy += (city.location_arr == QUARANTINE).sum()
+    assert quarantime_occupancy is not None
 
     # Screen cities in random order by transmitters/others groups
     priority_queue = list((i, 'transmitters') for i in range(len(cities_list))) + list((i, 'others') for i in range(len(cities_list)))
@@ -457,4 +462,3 @@ def screen_for_disease(cities_list, quarantine_zone_size, transmitters_test_quot
             quarantime_occupancy = _screen_transmitters(cities_list, city_idx,
                                                         quarantine_zone_size, quarantime_occupancy,
                                                         transmitter_candidates, transmitters_test_quota)
-
