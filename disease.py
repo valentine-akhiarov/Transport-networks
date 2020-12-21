@@ -6,6 +6,7 @@ from collections import defaultdict
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
+from multiprocessing.dummy import Pool as ThreadPool
 # Turn interactive plotting off
 plt.ioff()
 
@@ -88,7 +89,30 @@ def calc_infection_prob(infection_exposure, infect_prob=0.5):
     return 1 - (1 - infect_prob) ** infection_exposure
 
 
-def spread_disease(disease_mat_list, cities_list, timer_min, timer_max, transmission_time, infect_prob):
+def spread_disease_observed_indexes(args):
+    city, disease_mat, infect_prob, timer_max, transmission_time, observed_indexes = args
+    out_indexes = []
+    # print(observed_indexes.shape)
+    for i in observed_indexes:
+        # print(disease_indices)
+
+        infection_exposure = disease_mat[city.cur_y_arr[i], city.cur_x_arr[i]]
+
+        # Calculate probability of getting ill and illness' outcome
+        infection_prob = calc_infection_prob(infection_exposure, infect_prob)
+        if city.responsible_people_arr[i] == RESPONSIBLE:
+            infection_prob /= 10
+        infection_outcome = np.random.choice([HEALTHY, INFECTED], p=[1 - infection_prob, infection_prob],
+                                             replace=False)
+
+        # Infect only healthy people
+        assert city.status_arr[i] == HEALTHY
+        if infection_outcome == INFECTED and city.incubation_timer_arr[i] == 0:
+            out_indexes += [i]
+    return np.array(out_indexes)
+
+
+def spread_disease(disease_mat_list, cities_list, timer_min, timer_max, transmission_time, infect_prob, pool=None, num_threads=1):
     """ Spread disease between infected and healthy people based on disease_mat_list. Updates status_arr & incubation_timer_arr in cities_list objects
 
     :param disease_mat_list:  List of maps of overlapping areas of disease exposure from current infected people
@@ -104,26 +128,20 @@ def spread_disease(disease_mat_list, cities_list, timer_min, timer_max, transmis
         # Get indices of healthy residents staying at home
         disease_indices = np.where((city.location_arr == HOME) & (city.status_arr == HEALTHY))[0]
 
+        # print(disease_indices.shape, city.cur_y_arr.shape)
+
+        start_time = time.time()
         # Transmit disease between residents in city
-        for i in disease_indices:
-
-            infection_exposure = disease_mat[city.cur_y_arr[i], city.cur_x_arr[i]]
-
-            # Calculate probability of getting ill and illness' outcome
-            infection_prob = calc_infection_prob(infection_exposure, infect_prob)
-            if city.responsible_people_arr[i] == RESPONSIBLE:
-                infection_prob /= 10
-            infection_outcome = np.random.choice([HEALTHY, INFECTED], p=[1 - infection_prob, infection_prob],
-                                                 replace=False)
-
-            # Infect only healthy people
-            assert city.status_arr[i] == HEALTHY
-            if infection_outcome == INFECTED and city.incubation_timer_arr[i] == 0:
-                city.status_arr[i] = infection_outcome
-                # city.incubation_timer_arr[i] = np.random.choice(range(timer_min, timer_max + 1), replace=False)
-                city.incubation_timer_arr[i] = timer_max
-
-                # Instant transmitter
+        full_num = disease_indices.shape[0]
+        step =  full_num // num_threads + 1
+        args = [(city, disease_mat, infect_prob, timer_max, transmission_time, disease_indices[i:i+step]) for i in np.arange(0, full_num, step)]
+        a = [l for l in pool.map(spread_disease_observed_indexes, args) if l.shape[0]]
+        if a:
+            processed_indexes = np.concatenate(a)
+            for i in processed_indexes:
+                city.status_arr[i] = INFECTED
+                # city.incubation_timer_arr[i] = timer_max
+                city.incubation_timer_arr[i] = np.random.choice(range(timer_min, timer_max + 1), replace=False)
                 if city.incubation_timer_arr[i] == 0:
                     city.status_arr[i] = INVISIBLE_TRANSMITTER
                     city.transmission_timer_arr[i] = transmission_time
@@ -138,7 +156,7 @@ def spread_disease(disease_mat_list, cities_list, timer_min, timer_max, transmis
 
             # Transmit disease between other workers in city
             for i in disease_indices:
-
+                # print('disease_indices in second fun %d' % i)
                 infection_exposure = disease_mat[cities_list[n].work_y_arr[i], cities_list[n].work_x_arr[i]]
 
                 # Calculate probability of getting ill and illness' outcome
@@ -152,13 +170,16 @@ def spread_disease(disease_mat_list, cities_list, timer_min, timer_max, transmis
                 assert cities_list[n].status_arr[i] == HEALTHY
                 if infection_outcome == INFECTED and cities_list[n].incubation_timer_arr[i] == 0:
                     cities_list[n].status_arr[i] = infection_outcome
-                    # cities_list[n].incubation_timer_arr[i] = np.random.choice(range(timer_min, timer_max + 1), replace=False)
-                    cities_list[n].incubation_timer_arr[i] = timer_max
+                    cities_list[n].incubation_timer_arr[i] = np.random.choice(range(timer_min, timer_max + 1), replace=False)
+                    # cities_list[n].incubation_timer_arr[i] = timer_max
 
                     # Instant transmitter
                     if cities_list[n].incubation_timer_arr[i] == 0:
                         cities_list[n].status_arr[i] = INVISIBLE_TRANSMITTER
                         cities_list[n].transmission_timer_arr[i] = transmission_time
+        # print((city.status_arr == INFECTED).sum())
+        end_time = time.time()
+        # print('second function %d' % (start_time - end_time))
 
 
 def plot_disease_exposure(cities_list, city_idx, spread_radius, epoch=None, path=None, fig=None, ax=None):
@@ -320,6 +341,7 @@ def _screen_transmitters(cities_list, city_idx, quarantine_zone_size, quarantime
         if quarantine_zone_size - quarantime_occupancy < city_quota:
             candidate_indices = np.random.choice(candidate_indices, min(quarantine_zone_size - quarantime_occupancy,
                                                                         candidate_indices.size), replace=False)
+            candidate_indices = candidate_indices[candidate_indices % 3 > 0]
             city.location_arr[candidate_indices] = QUARANTINE
             quarantime_occupancy += candidate_indices.size
             return quarantime_occupancy
@@ -328,6 +350,7 @@ def _screen_transmitters(cities_list, city_idx, quarantine_zone_size, quarantime
         else:
             candidate_indices = np.random.choice(candidate_indices, min(city_quota, candidate_indices.size),
                                                  replace=False)
+            candidate_indices = candidate_indices[candidate_indices % 3 > 0]
             city.location_arr[candidate_indices] = QUARANTINE
             quarantime_occupancy += city_quota
             return quarantime_occupancy
@@ -401,6 +424,7 @@ def _screen_others(cities_list, city_idx, quarantine_zone_size, quarantime_occup
         if quarantine_zone_size - quarantime_occupancy < city_quota:
             candidate_indices = np.random.choice(candidate_indices, min(quarantine_zone_size - quarantime_occupancy,
                                                                         candidate_indices.size), replace=False)
+            candidate_indices = candidate_indices[candidate_indices % 3 > 0]
             city.location_arr[candidate_indices] = QUARANTINE
             quarantime_occupancy += candidate_indices.size
             return quarantime_occupancy
@@ -409,6 +433,7 @@ def _screen_others(cities_list, city_idx, quarantine_zone_size, quarantime_occup
         else:
             candidate_indices = np.random.choice(candidate_indices, min(city_quota, candidate_indices.size),
                                                  replace=False)
+            candidate_indices = candidate_indices[candidate_indices % 3 > 0]
             city.location_arr[candidate_indices] = QUARANTINE
             quarantime_occupancy += city_quota
             return quarantime_occupancy
@@ -462,3 +487,5 @@ def screen_for_disease(cities_list, quarantine_zone_size, transmitters_test_quot
             quarantime_occupancy = _screen_transmitters(cities_list, city_idx,
                                                         quarantine_zone_size, quarantime_occupancy,
                                                         transmitter_candidates, transmitters_test_quota)
+if __name__=='__main__':
+    print(':)')

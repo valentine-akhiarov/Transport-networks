@@ -107,8 +107,11 @@ def decrement_timers(cities_list, transmission_time, death_prob):
         city.transmission_timer_arr[disease_indices] -= 1
 
         # Make transmitters visible
+        transmit_gap = np.random.randint(low=-transmission_time, high=0, size=city.transmission_timer_arr.shape[0]) + int(np.floor(transmission_time / 2))
+        # print(transmit_gap.shape)
+        transmit_gap = np.clip(transmit_gap, a_min=1, a_max=int(np.floor(transmission_time / 2)))
         disease_indices = np.where(
-            (city.transmission_timer_arr <= int(np.floor(transmission_time / 2))) & (city.transmission_timer_arr != 0))[
+            (city.transmission_timer_arr <= transmit_gap) & (city.transmission_timer_arr != 0))[
             0]
         city.status_arr[disease_indices] = TRANSMITTER
 

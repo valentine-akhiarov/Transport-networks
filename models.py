@@ -6,6 +6,9 @@ from collections import defaultdict
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
+# from multiprocessing.dummy import Pool as ThreadPool
+from multiprocessing import Pool
+from multiprocessing import get_context
 # Turn interactive plotting off
 plt.ioff()
 
@@ -17,8 +20,8 @@ from disease import *
 def simulate_transportations_with_infections(init_transmitters_num, remote_workers, responsible_people,
                                              timer_min, timer_max, transmission_time, neighbourhood_radius,
                                              infect_prob, death_prob, radius, spread_radius,
-                                             quarantine_zone_size, transmitters_test_quota, others_test_quota,
-                                             epochs, debug=False, plot_disease_matrix=None):
+                                             quarantine_zone_size,  transmitters_test_quota, others_test_quota,
+                                             epochs, debug=False, plot_disease_matrix=None, num_threads=1):
     """ Simulate people transportation and disease spread in a square grid
 
     :param init_transmitters_num:   Initial infected people number
@@ -49,45 +52,45 @@ def simulate_transportations_with_infections(init_transmitters_num, remote_worke
 
     msk = CityResidents(city_num=0, city_code='msk', x_size=506, y_size=506, residents_num=126781,
                         init_transmitters_num=init_transmitters_num,
-                        remote_workers=remote_workers, responsible_people=responsible_people, timer_min=timer_min,
+                        remote_workers=0, responsible_people=0, timer_min=timer_min,
                         timer_max=timer_max, transmission_time=transmission_time)
 
     khi = CityResidents(city_num=1, city_code='khi', x_size=105, y_size=105, residents_num=2596,
                         init_transmitters_num=0,
-                        remote_workers=remote_workers, responsible_people=responsible_people, timer_min=timer_min,
+                        remote_workers=0, responsible_people=0, timer_min=timer_min,
                         timer_max=timer_max, transmission_time=transmission_time)
 
     kra = CityResidents(city_num=2, city_code='kra', x_size=51, y_size=51, residents_num=1756, init_transmitters_num=0,
-                        remote_workers=remote_workers, responsible_people=responsible_people, timer_min=timer_min,
+                        remote_workers=0, responsible_people=0, timer_min=timer_min,
                         timer_max=timer_max, transmission_time=transmission_time)
 
     odi = CityResidents(city_num=3, city_code='odi', x_size=44, y_size=44, residents_num=1355, init_transmitters_num=0,
-                        remote_workers=remote_workers, responsible_people=responsible_people, timer_min=timer_min,
+                        remote_workers=0, responsible_people=0, timer_min=timer_min,
                         timer_max=timer_max, transmission_time=transmission_time)
 
     dom = CityResidents(city_num=4, city_code='dom', x_size=126, y_size=126, residents_num=1372,
                         init_transmitters_num=0,
-                        remote_workers=remote_workers, responsible_people=responsible_people, timer_min=timer_min,
+                        remote_workers=0, responsible_people=0, timer_min=timer_min,
                         timer_max=timer_max, transmission_time=transmission_time)
 
     pod = CityResidents(city_num=5, city_code='pod', x_size=64, y_size=64, residents_num=3081, init_transmitters_num=0,
-                        remote_workers=remote_workers, responsible_people=responsible_people, timer_min=timer_min,
+                        remote_workers=0, responsible_people=0, timer_min=timer_min,
                         timer_max=timer_max, transmission_time=transmission_time)
 
     lub = CityResidents(city_num=6, city_code='lub', x_size=36, y_size=36, residents_num=2053, init_transmitters_num=0,
-                        remote_workers=remote_workers, responsible_people=responsible_people, timer_min=timer_min,
+                        remote_workers=0, responsible_people=0, timer_min=timer_min,
                         timer_max=timer_max, transmission_time=transmission_time)
 
     sho = CityResidents(city_num=7, city_code='sho', x_size=72, y_size=72, residents_num=1261, init_transmitters_num=0,
-                        remote_workers=remote_workers, responsible_people=responsible_people, timer_min=timer_min,
+                        remote_workers=0, responsible_people=0, timer_min=timer_min,
                         timer_max=timer_max, transmission_time=transmission_time)
 
     bal = CityResidents(city_num=8, city_code='bal', x_size=79, y_size=79, residents_num=5074, init_transmitters_num=0,
-                        remote_workers=remote_workers, responsible_people=responsible_people, timer_min=timer_min,
+                        remote_workers=0, responsible_people=0, timer_min=timer_min,
                         timer_max=timer_max, transmission_time=transmission_time)
 
     myt = CityResidents(city_num=9, city_code='myt', x_size=59, y_size=59, residents_num=2355, init_transmitters_num=0,
-                        remote_workers=remote_workers, responsible_people=responsible_people, timer_min=timer_min,
+                        remote_workers=0, responsible_people=0, timer_min=timer_min,
                         timer_max=timer_max, transmission_time=transmission_time)
 
     cities_list.append(msk)
@@ -127,6 +130,36 @@ def simulate_transportations_with_infections(init_transmitters_num, remote_worke
     # Run simulations         #
     ###########################
 
+    old_radius = radius
+    old_neighbourhood_radius = neighbourhood_radius
+    old_responsabl = responsible_people
+
+    def gov_full_karatnine_start(epoch, radius, neighbourhood_radius, start_epoch=39, end_epoch=150):
+        if epoch > start_epoch and epoch <= end_epoch:
+            radius = 1
+            neighbourhood_radius = 2
+            for city in cities_list:
+                city.init_remote_group(remote_workers)
+        return radius, neighbourhood_radius
+
+    def gov_karatnine_decrease(epoch, radius, neighbourhood_radius, start_epoch=150, end_epoch=315):
+        if epoch <= end_epoch and epoch > start_epoch:
+            radius = 1 + (old_radius-1) * (epoch-start_epoch) / (end_epoch - start_epoch)
+            neighbourhood_radius = 2 + (old_neighbourhood_radius-2) * (epoch-start_epoch) / (end_epoch - start_epoch)
+            for city in cities_list:
+                # city.remote_workers = 
+                city.init_remote_group(0.1 + (remote_workers-0.1) * (epoch-start_epoch) / (end_epoch - start_epoch))
+        return radius, neighbourhood_radius
+
+    def responsabl_fun(epoch):
+        if epoch > 3:
+            resp_probb = (1 - (1 - (transmitters_tracker[-1])*10/(126781))**200)**0.5
+            # resp_probb = 1
+            print(resp_probb)
+            for city in cities_list:
+                city.init_responsible_group(old_responsabl*resp_probb) 
+
+
     timer_dict = defaultdict(list)
 
     healthy_tracker = []
@@ -138,8 +171,16 @@ def simulate_transportations_with_infections(init_transmitters_num, remote_worke
     quarantine_tracker = []
 
     hour = 1
-
+    pool = Pool(num_threads)
     for i in tqdm(range(1, epochs + 1)):
+        radius, neighbourhood_radius = gov_full_karatnine_start(i, old_radius, old_neighbourhood_radius)
+        radius, neighbourhood_radius = gov_karatnine_decrease(i, radius, neighbourhood_radius)
+        responsabl_fun(i)
+        print('radiuses', radius, neighbourhood_radius)
+        a = cities_list[0].responsible_people_arr
+        print('resp.sum', a[a == RESPONSIBLE].sum(-1))
+        a = cities_list[0].worker_type_arr
+        print('resp.sum', a[a == REMOTE].sum(-1))
 
         # 3 hours in a day
         if hour > 3:
@@ -228,8 +269,10 @@ def simulate_transportations_with_infections(init_transmitters_num, remote_worke
 
         # Walk peaple that are near their home
         start_time = time.time()
-        walk_iter(cities_list, radius, neighbourhood_radius)
+        walk_iter(cities_list, radius, neighbourhood_radius, pool, num_threads)
         end_time = time.time()
+        # print(cities_list[0].cur_x_arr[:10])
+        # print(cities_list[0].home_x_arr[:10])
         timer_dict['walk_iter'].append(end_time - start_time)
         if debug:
             print('\twalk_iter()\t\t\t{:.2f} sec.'.format(end_time - start_time))
@@ -264,7 +307,7 @@ def simulate_transportations_with_infections(init_transmitters_num, remote_worke
 
         # Spread disease (based on the maps above)
         start_time = time.time()
-        spread_disease(disease_mat_list, cities_list, timer_min, timer_max, transmission_time, infect_prob)
+        spread_disease(disease_mat_list, cities_list, timer_min, timer_max, transmission_time, infect_prob, pool, num_threads)
         end_time = time.time()
         timer_dict['spread_disease'].append(end_time - start_time)
         if debug:
@@ -295,7 +338,9 @@ def simulate_transportations_with_infections(init_transmitters_num, remote_worke
                                                                                    transmitters_tracker[-1]))
         if debug:
             print('\n')
-
+    pool.close()
+    pool.join()
+    # pool
     return timer_dict, \
            np.array(healthy_tracker), np.array(infected_tracker), np.array(invisible_transmitters_tracker), \
            np.array(transmitters_tracker), np.array(cured_tracker), np.array(dead_tracker), np.array(quarantine_tracker)
