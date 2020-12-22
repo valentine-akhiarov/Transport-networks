@@ -21,7 +21,7 @@ def simulate_transportations_with_infections(init_transmitters_num, remote_worke
                                              timer_min, timer_max, transmission_time, neighbourhood_radius,
                                              infect_prob, death_prob, radius, spread_radius,
                                              quarantine_zone_size,  transmitters_test_quota, others_test_quota,
-                                             epochs, debug=False, plot_disease_matrix=None, num_threads=1):
+                                             epochs, debug=False, plot_disease_matrix=None, num_threads=1, quarantine_start=39):
     """ Simulate people transportation and disease spread in a square grid
 
     :param init_transmitters_num:   Initial infected people number
@@ -134,28 +134,26 @@ def simulate_transportations_with_infections(init_transmitters_num, remote_worke
     old_neighbourhood_radius = neighbourhood_radius
     old_responsabl = responsible_people
 
-    def gov_full_karatnine_start(epoch, radius, neighbourhood_radius, start_epoch=39, end_epoch=150):
+    def gov_full_karatnine_start(epoch, radius, neighbourhood_radius, start_epoch=90, end_epoch=168):
         if epoch > start_epoch and epoch <= end_epoch:
             radius = 1
-            neighbourhood_radius = 2
+            neighbourhood_radius = 1
             for city in cities_list:
                 city.init_remote_group(remote_workers)
         return radius, neighbourhood_radius
 
-    def gov_karatnine_decrease(epoch, radius, neighbourhood_radius, start_epoch=150, end_epoch=315):
+    def gov_karatnine_decrease(epoch, radius, neighbourhood_radius, start_epoch=168, end_epoch=450):
         if epoch <= end_epoch and epoch > start_epoch:
             radius = 1 + (old_radius-1) * (epoch-start_epoch) / (end_epoch - start_epoch)
-            neighbourhood_radius = 2 + (old_neighbourhood_radius-2) * (epoch-start_epoch) / (end_epoch - start_epoch)
+            neighbourhood_radius = 1 + (old_neighbourhood_radius-2) * (epoch-start_epoch) / (end_epoch - start_epoch)
             for city in cities_list:
                 # city.remote_workers = 
                 city.init_remote_group(0.1 + (remote_workers-0.1) * (epoch-start_epoch) / (end_epoch - start_epoch))
         return radius, neighbourhood_radius
 
     def responsabl_fun(epoch):
-        if epoch > 3:
+        if epoch > 60:
             resp_probb = (1 - (1 - (transmitters_tracker[-1])*10/(126781))**200)**0.5
-            # resp_probb = 1
-            print(resp_probb)
             for city in cities_list:
                 city.init_responsible_group(old_responsabl*resp_probb) 
 
@@ -173,14 +171,17 @@ def simulate_transportations_with_infections(init_transmitters_num, remote_worke
     hour = 1
     pool = Pool(num_threads)
     for i in tqdm(range(1, epochs + 1)):
-        radius, neighbourhood_radius = gov_full_karatnine_start(i, old_radius, old_neighbourhood_radius)
-        radius, neighbourhood_radius = gov_karatnine_decrease(i, radius, neighbourhood_radius)
+        radius, neighbourhood_radius = gov_full_karatnine_start(i, old_radius, old_neighbourhood_radius, start_epoch=quarantine_start, end_epoch=quarantine_start+120)
+        radius, neighbourhood_radius = gov_karatnine_decrease(i, radius, neighbourhood_radius, start_epoch=quarantine_start+120, end_epoch=quarantine_start+360)
         responsabl_fun(i)
-        print('radiuses', radius, neighbourhood_radius)
+        if debug:
+            print('radiuses', radius, neighbourhood_radius)
         a = cities_list[0].responsible_people_arr
-        print('resp.sum', a[a == RESPONSIBLE].sum(-1))
+        if debug:
+            print('resp.sum', a[a == RESPONSIBLE].sum(-1))
         a = cities_list[0].worker_type_arr
-        print('resp.sum', a[a == REMOTE].sum(-1))
+        if debug:
+            print('resp.sum', a[a == REMOTE].sum(-1))
 
         # 3 hours in a day
         if hour > 3:
